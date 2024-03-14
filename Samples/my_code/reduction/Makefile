@@ -1,31 +1,4 @@
 ################################################################################
-# Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
-#
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions
-# are met:
-#  * Redistributions of source code must retain the above copyright
-#    notice, this list of conditions and the following disclaimer.
-#  * Redistributions in binary form must reproduce the above copyright
-#    notice, this list of conditions and the following disclaimer in the
-#    documentation and/or other materials provided with the distribution.
-#  * Neither the name of NVIDIA CORPORATION nor the names of its
-#    contributors may be used to endorse or promote products derived
-#    from this software without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
-# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-# PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
-# OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-################################################################################
 #
 # Makefile project only supported on Mac OS X and Linux Platforms)
 #
@@ -34,40 +7,6 @@
 # Location of the CUDA Toolkit
 CUDA_PATH ?= /usr/local/cuda
 
-##############################
-# start deprecated interface #
-##############################
-ifeq ($(x86_64),1)
-    $(info WARNING - x86_64 variable has been deprecated)
-    $(info WARNING - please use TARGET_ARCH=x86_64 instead)
-    TARGET_ARCH ?= x86_64
-endif
-ifeq ($(ARMv7),1)
-    $(info WARNING - ARMv7 variable has been deprecated)
-    $(info WARNING - please use TARGET_ARCH=armv7l instead)
-    TARGET_ARCH ?= armv7l
-endif
-ifeq ($(aarch64),1)
-    $(info WARNING - aarch64 variable has been deprecated)
-    $(info WARNING - please use TARGET_ARCH=aarch64 instead)
-    TARGET_ARCH ?= aarch64
-endif
-ifeq ($(ppc64le),1)
-    $(info WARNING - ppc64le variable has been deprecated)
-    $(info WARNING - please use TARGET_ARCH=ppc64le instead)
-    TARGET_ARCH ?= ppc64le
-endif
-ifneq ($(GCC),)
-    $(info WARNING - GCC variable has been deprecated)
-    $(info WARNING - please use HOST_COMPILER=$(GCC) instead)
-    HOST_COMPILER ?= $(GCC)
-endif
-ifneq ($(abi),)
-    $(error ERROR - abi variable has been removed)
-endif
-############################
-# end deprecated interface #
-############################
 
 # architecture
 HOST_ARCH   := $(shell uname -m)
@@ -283,9 +222,9 @@ LIBRARIES :=
 
 # Gencode arguments
 ifeq ($(TARGET_ARCH),$(filter $(TARGET_ARCH),armv7l aarch64 sbsa))
-SMS ?= 53 61 70 72 75 80 86 87 90
+SMS ?= 86 
 else
-SMS ?= 50 52 60 61 70 75 80 86 89 90
+SMS ?= 86 
 endif
 
 ifeq ($(SMS),)
@@ -315,7 +254,8 @@ endif
 # Target rules
 all: build
 
-build: matrixMul
+naive: reduction_naive
+thread_coarsening: reduction_thread_coarsening
 
 check.deps:
 ifeq ($(SAMPLE_ENABLED),0)
@@ -324,29 +264,18 @@ else
 	@echo "Sample is ready - all dependencies have been met"
 endif
 
-deviceCount.o:device_count.cu
+reduction_thread_coarsening.o: reduction_thread_coarsening.cu
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
 
-devCount: deviceCount.o
+reduction_thread_coarsening: reduction_thread_coarsening.o
 	$(EXEC) $(NVCC) $(ALL_LDFLAGS) $(GENCODE_FLAGS) -o $@ $+ $(LIBRARIES)
-	$(EXEC) mkdir -p ../../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
-	$(EXEC) cp $@ ../../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
 
-matrixMul.o:matrixMul.cu
+reduction_naive.o: reduction_naive.cu
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
 
-matrixMul: matrixMul.o
+reduction_naive: reduction_naive.o
 	$(EXEC) $(NVCC) $(ALL_LDFLAGS) $(GENCODE_FLAGS) -o $@ $+ $(LIBRARIES)
-	$(EXEC) mkdir -p ../../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
-	$(EXEC) cp $@ ../../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
-
-run: build
-	$(EXEC) ./matrixMul
-
-testrun: build
 
 clean:
-	rm -f matrixMul matrixMul.o
-	rm -rf ../../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)/matrixMul
-
-clobber: clean
+	rm -f reduction_naive reduction_naive.o
+	rm -f reduction_thread_coarsening.o reduction_thread_coarsening.cu
