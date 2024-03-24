@@ -110,7 +110,7 @@ __device__ void reduceBlock(double *sdata, const cg::thread_block &cta) {
 //
 // For more details on the reduction algorithm (notably the multi-pass
 // approach), see the "reduction" sample in the CUDA SDK.
-extern "C" __global__ void reduceSinglePassMultiBlockCG(const float *g_idata,
+__global__ void reduceSinglePassMultiBlockCG(const float *g_idata,
                                                         float *g_odata,
                                                         unsigned int n) {
   // Handle to thread block group
@@ -346,8 +346,7 @@ bool runTest(int argc, char **argv, int device) {
 
   // copy data directly to device memory
   checkCudaErrors(cudaMemcpy(d_idata, h_idata, bytes, cudaMemcpyHostToDevice));
-  checkCudaErrors(cudaMemcpy(d_odata, h_idata, numBlocks * sizeof(float),
-                             cudaMemcpyHostToDevice));
+//  checkCudaErrors(cudaMemcpy(d_odata, h_idata, numBlocks * sizeof(float), cudaMemcpyHostToDevice));
 
   int testIterations = 100;
 
