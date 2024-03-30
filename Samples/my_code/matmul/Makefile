@@ -100,7 +100,7 @@ else ifneq ($(TARGET_ARCH),$(HOST_ARCH))
     endif
 endif
 HOST_COMPILER ?= g++
-NVCC          := $(CUDA_PATH)/bin/nvcc -ccbin $(HOST_COMPILER)
+NVCC          := $(CUDA_PATH)/bin/nvcc -ccbin $(HOST_COMPILER) -g -lineinfo
 
 # internal flags
 NVCCFLAGS   := -m${TARGET_SIZE}
@@ -271,6 +271,12 @@ matmul_naive.o: matmul_naive.cu
 matmul_naive: matmul_naive.o
 	$(EXEC) $(NVCC) $(ALL_LDFLAGS) $(GENCODE_FLAGS) -o $@ $+ $(LIBRARIES)
 
+matmul_gmem.o: matmul_gmem.cu
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
+
+matmul_gmem: matmul_gmem.o
+	$(EXEC) $(NVCC) $(ALL_LDFLAGS) $(GENCODE_FLAGS) -o $@ $+ $(LIBRARIES)
+
 matmul_smem.o: matmul_smem.cu
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
 
@@ -279,4 +285,5 @@ matmul_smem: matmul_smem.o
 
 clean:
 	rm -f matmul_naive matmul_naive.o
+	rm -f matmul_gmem matmul_gmem.o
 	rm -f matmul_smem matmul_smem.o

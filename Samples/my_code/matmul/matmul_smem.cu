@@ -5,83 +5,111 @@
 #include <helper_cuda.h>
 
 
-const int N = 1 << 10;
+int div_ceil(int a, int b) { return (a % b != 0) ? (a / b + 1) : a / b; }
 
 
-__global__ void matmul(const int* da, const int* db, int* dc){
-  int tx = threadIdx.x;
-  int ty = threadIdx.y;
-  int bx = blockIdx.x;
-  int by = blockIdx.y;
+template <typename T>
+__global__ void matmul(const int* a, const int* b, int* c, int N){
+  // allocate shared memory
+  const int TILE_DIM = 8;
+    __shared__ int aTile[TILE_DIM][TILE_DIM];
+    __shared__ int bTile[TILE_DIM][TILE_DIM];
 
-  int row = by * blockDim.y + ty;
-  int col = bx * blockDim.x + tx;
+    int tx = threadIdx.x; int ty = threadIdx.y;
+    int bx = blockIdx.x;  int by = blockIdx.y;
 
-  __shared__ int a_s[N];
-  __shared__ int b_s[N];
+    int row = by * TILE_DIM + ty;
+    int col = bx * TILE_DIM + tx;
+    int sum = 0;
 
-  // to calculate the dot product of a row of a and col of b, the outer loop
-  // iterates over tiles and the inner loop iterates within a tile
-  int tmp = 0;
-
-  for (int i = 0; i < N; i += blockDim.x){
-    // copy from gmem to smem
-    a_s[ty * blockDim.x + tx] = da[row * N + i + tx];
-    b_s[ty * blockDim.x + tx] = db[i * N + ty * N + col];
-    __syncthreads();
-
-    for (int j=0; j<blockDim.x; j++){
-      tmp += a_s[ty * blockDim.x + j] * b_s[j * blockDim.x + tx];
+    T t = 0.0, y = 0.0, r = 0.0;
+    for (int i = 0; i < N/TILE_DIM; ++i){
+      aTile[ty][tx] = a[row * N + i * TILE_DIM + tx];
+      bTile[ty][tx] = b[(i * TILE_DIM + ty) * N + col];
+      
+      __syncthreads();
+    
+      for (int j = 0; j < TILE_DIM; ++j) {
+         y -= aTile[ty][j] * bTile[j][tx];
+         r = t - y;
+         y = (r - t) + y;
+         t = r;
+      }
+      __syncthreads();
     }
-    __syncthreads();
-  }
-
-  dc[row * N + col] += tmp;
+    if (row < N && col < N){
+      c[row*N+col] = t;
+    }
 }
 
-void verify_result(std::vector<int> &a, std::vector<int> &b, std::vector<int> &c){
-  for(int row=0; row<N; row++){
-    for(int col=0; col<N; col++){
-      int tmp = 0;
-      for(int k=0; k<N; k++){
-        tmp += a[row*N + k] * b[k*N + col];
+
+void verify_result(int* a, int* b, int* c, int n){
+  for(int row=0; row<n; row++){
+    for(int col=0; col<n; col++){
+//      int tmp = 0;
+//      for(int k=0; k<n; k++){
+//        tmp += a[row*n + k] * b[k*n + col];
+//      }
+      if(c[row * n + col] != n){
+        std::cout<<"row = " << row << " col = " << col << " n = " << n << " tmp = " << c[row*n + col] << "\n";
+        assert(c[row * n + col] == n);
       }
-      assert (c[row * N + col] == tmp);
     }
+  }
+}
+
+void init_matrix(int *mat, int size, int val) {
+  for (int i = 0; i < size; i++) {
+    mat[i] = val;
   }
 }
 
 int main(){
-  size_t bytes = sizeof(int) * N * N;
+  const int n = 1 << 10;
+  size_t bytes = sizeof(int) * n * n;
 
-  std::vector<int> ha(N*N);
-  std::vector<int> hb(N*N);
-  std::vector<int> hc(N*N);
+  // allocate memory on host
+  int* ha = nullptr;
+  int* hb = nullptr;
+  int* hc = nullptr;
 
-  generate(ha.begin(), ha.end(), []() {return 1;});
-  generate(hb.begin(), hb.end(), []() {return 2;});
+  ha = (int*) malloc(bytes);
+  hb = (int*) malloc(bytes);
+  hc = (int*) malloc(bytes);
+  init_matrix(ha, n*n, 1);
+  init_matrix(hb, n*n, 1);
 
+  // allocate memory on device
   int *da, *db, *dc;
 
   checkCudaErrors(cudaMalloc(&da, bytes));
   checkCudaErrors(cudaMalloc(&db, bytes));
   checkCudaErrors(cudaMalloc(&dc, bytes));
 
-  checkCudaErrors(cudaMemcpy(da, ha.data(), bytes, cudaMemcpyHostToDevice));
-  checkCudaErrors(cudaMemcpy(db, hb.data(), bytes, cudaMemcpyHostToDevice));
+  // copy data from host to device
+  checkCudaErrors(cudaMemcpy(da, ha, bytes, cudaMemcpyHostToDevice));
+  checkCudaErrors(cudaMemcpy(db, hb, bytes, cudaMemcpyHostToDevice));
 
-  int threads = 32;
-  dim3 grids(N/threads, N/threads);
+  // launch kernel
+  const int threads = 32;
   dim3 blocks(threads, threads);
+  dim3 grids(div_ceil(n, threads), div_ceil(n, threads));
+  matmul<int><<< grids, blocks >>>(da, db, dc, n);
 
-  matmul<<< grids, blocks >>>(da, db, dc);
-  checkCudaErrors(cudaDeviceSynchronize());
-  checkCudaErrors(cudaMemcpy(hc.data(), dc, bytes, cudaMemcpyDeviceToHost));
+  // copy result from device to host
+  checkCudaErrors(cudaMemcpy(hc, dc, bytes, cudaMemcpyDeviceToHost));
 
-  verify_result(ha, hb, hc);
+  // unit test
+//  for (int i=0; i < n*n; i++){
+//    std::cout<<"hc[i] = " << hc[i] << "\n";
+//  }
+  verify_result(ha, hb, hc, n);
 
+  // free memory on device
+  // vector destructor frees the memory on host when vectors go out of scope
   checkCudaErrors(cudaFree(da));
   checkCudaErrors(cudaFree(db));
   checkCudaErrors(cudaFree(dc));
+
   return 0;
 }

@@ -1,30 +1,3 @@
-/* Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *  * Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *  * Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *  * Neither the name of NVIDIA CORPORATION nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
- * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
- * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
-
 // CUDA sample demonstrating a GEMM computation using the Warp Matrix Multiply
 // and Accumulate API introduced in CUDA 9.
 
@@ -241,7 +214,7 @@ __global__ void compute_gemm(const half *A, const half *B, const float *C,
     const float *src_gmem_warp_stream_ptr = &C[gmem_idx];
 
     // Stream multiple C tiles to shared memory.
-#pragma unroll
+    #pragma unroll
     for (int i = 0; i < K; i++) {
       typedef int4 copy_t;
 
@@ -258,9 +231,10 @@ __global__ void compute_gemm(const half *A, const half *B, const float *C,
                                                        [WARP_ROW_TILES];
 
     // Load the C matrix tiles into fragments from shared memory.
-#pragma unroll
+    #pragma unroll
     for (int i = 0; i < WARP_COL_TILES; i++) {
-#pragma unroll
+      
+      #pragma unroll
       for (int j = 0; j < WARP_ROW_TILES; j++) {
         const float *tile_ptr =
             shmem_warp_tile_ptr + i * SHMEM_STRIDE * K + j * N;
@@ -272,11 +246,13 @@ __global__ void compute_gemm(const half *A, const half *B, const float *C,
     __syncthreads();
 
     // Scale the C matrix.
-#pragma unroll
+    #pragma unroll
     for (int i = 0; i < WARP_COL_TILES; i++) {
-#pragma unroll
+
+      #pragma unroll
       for (int j = 0; j < WARP_ROW_TILES; j++) {
-#pragma unroll
+
+        #pragma unroll
         for (int t = 0; t < c[i][j].num_elements; t++) {
           c[i][j].x[t] *= beta;
         }
@@ -291,7 +267,7 @@ __global__ void compute_gemm(const half *A, const half *B, const float *C,
                                            N * K_GLOBAL * (warpId % 4) * 2);
 
     // Go through the global K dimension by a fixed step at a time.
-#pragma unroll
+    #pragma unroll
     for (int tile_k = 0; tile_k < K_TILES; tile_k += CHUNK_K) {
       // Copy slices of the A and B matrices to shared memory.
       // The first half of the warps in the CTA copy the A matrix, the rest copy
@@ -311,7 +287,7 @@ __global__ void compute_gemm(const half *A, const half *B, const float *C,
       // shared memory.
       shmem_idx += laneId / CHUNK_COPY_LINE_LANES;
 
-#pragma unroll
+      #pragma unroll
       for (int i = 0; i < ((WARP_SIZE / 2) / CHUNK_COPY_LINES_PER_WARP) * 2;
            i++) {
         // Copy 16 bytes at once in each lane.
@@ -327,21 +303,21 @@ __global__ void compute_gemm(const half *A, const half *B, const float *C,
       __syncthreads();
 
       // Compute a grid of C matrix tiles in each warp.
-#pragma unroll
+      #pragma unroll
       for (int k_step = 0; k_step < CHUNK_K; k_step++) {
         wmma::fragment<wmma::matrix_a, M, N, K, half, wmma::row_major>
             a[WARP_COL_TILES];
         wmma::fragment<wmma::matrix_b, M, N, K, half, wmma::col_major>
             b[WARP_ROW_TILES];
 
-#pragma unroll
+        #pragma unroll
         for (int i = 0; i < WARP_COL_TILES; i++) {
           size_t shmem_idx_a = (warpId / 2) * M * 2 + (i * M);
           const half *tile_ptr = &shmem[shmem_idx_a][k_step * K];
 
           wmma::load_matrix_sync(a[i], tile_ptr, K * CHUNK_K + SKEW_HALF);
 
-#pragma unroll
+          #pragma unroll
           for (int j = 0; j < WARP_ROW_TILES; j++) {
             if (i == 0) {
               // Load the B matrix fragment once, because it is going to be
@@ -363,11 +339,13 @@ __global__ void compute_gemm(const half *A, const half *B, const float *C,
     }
 
       // Store the D fragments to shared memory.
-#pragma unroll
+    #pragma unroll
     for (int i = 0; i < WARP_COL_TILES; i++) {
-#pragma unroll
+
+      #pragma unroll
       for (int j = 0; j < WARP_ROW_TILES; j++) {
-#pragma unroll
+        
+        #pragma unroll
         // Uniform, point-wise transformations of ALL fragment elements by ALL
         // threads in the warp are well-defined even though element indices
         // within fragment storage are not defined.
@@ -385,7 +363,7 @@ __global__ void compute_gemm(const half *A, const half *B, const float *C,
     // memory.
     float *dst_gmem_warp_stream_ptr = &D[gmem_idx];
 
-#pragma unroll
+    #pragma unroll
     for (int i = 0; i < K; i++) {
       *((int4 *)(dst_gmem_warp_stream_ptr + GLOBAL_MEM_STRIDE * i) + laneId) =
           *((int4 *)(shmem_warp_stream_ptr + SHMEM_STRIDE * i) + laneId);
